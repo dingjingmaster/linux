@@ -1854,10 +1854,10 @@ static int tp_event(struct snd_soc_dapm_widget *w,
 
 	reg = WM8962_ADDITIONAL_CONTROL_4;
 
-	if (!strcmp(w->name, "TEMP_HP")) {
+	if (!snd_soc_dapm_widget_name_cmp(w, "TEMP_HP")) {
 		mask = WM8962_TEMP_ENA_HP_MASK;
 		val = WM8962_TEMP_ENA_HP;
-	} else if (!strcmp(w->name, "TEMP_SPK")) {
+	} else if (!snd_soc_dapm_widget_name_cmp(w, "TEMP_SPK")) {
 		mask = WM8962_TEMP_ENA_SPK_MASK;
 		val = WM8962_TEMP_ENA_SPK;
 	} else {
@@ -2503,6 +2503,14 @@ static void wm8962_configure_bclk(struct snd_soc_component *component)
 		snd_soc_component_update_bits(component, WM8962_CLOCKING2,
 				WM8962_SYSCLK_ENA_MASK, WM8962_SYSCLK_ENA);
 
+	/* DSPCLK_DIV field in WM8962_CLOCKING1 register is used to generate
+	 * correct frequency of LRCLK and BCLK. Sometimes the read-only value
+	 * can't be updated timely after enabling SYSCLK. This results in wrong
+	 * calculation values. Delay is introduced here to wait for newest
+	 * value from register. The time of the delay should be at least
+	 * 500~1000us according to test.
+	 */
+	usleep_range(500, 1000);
 	dspclk = snd_soc_component_read(component, WM8962_CLOCKING1);
 
 	if (snd_soc_component_get_bias_level(component) != SND_SOC_BIAS_ON)
@@ -3565,7 +3573,7 @@ static const struct regmap_config wm8962_regmap = {
 	.num_reg_defaults = ARRAY_SIZE(wm8962_reg),
 	.volatile_reg = wm8962_volatile_register,
 	.readable_reg = wm8962_readable_register,
-	.cache_type = REGCACHE_RBTREE,
+	.cache_type = REGCACHE_MAPLE,
 };
 
 static int wm8962_set_pdata_from_of(struct i2c_client *i2c,
@@ -3938,7 +3946,7 @@ static struct i2c_driver wm8962_i2c_driver = {
 		.of_match_table = wm8962_of_match,
 		.pm = &wm8962_pm,
 	},
-	.probe_new = wm8962_i2c_probe,
+	.probe =    wm8962_i2c_probe,
 	.remove =   wm8962_i2c_remove,
 	.id_table = wm8962_i2c_id,
 };

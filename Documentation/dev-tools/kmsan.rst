@@ -1,9 +1,9 @@
 .. SPDX-License-Identifier: GPL-2.0
 .. Copyright (C) 2022, Google LLC.
 
-===================================
-The Kernel Memory Sanitizer (KMSAN)
-===================================
+===============================
+Kernel Memory Sanitizer (KMSAN)
+===============================
 
 KMSAN is a dynamic error detector aimed at finding uses of uninitialized
 values. It is based on compiler instrumentation, and is quite similar to the
@@ -67,6 +67,7 @@ uninitialized in the local variable, as well as the stack where the value was
 copied to another memory location before use.
 
 A use of uninitialized value ``v`` is reported by KMSAN in the following cases:
+
  - in a condition, e.g. ``if (v) { ... }``;
  - in an indexing or pointer dereferencing, e.g. ``array[v]`` or ``*v``;
  - when it is copied to userspace or hardware, e.g. ``copy_to_user(..., &v, ...)``;

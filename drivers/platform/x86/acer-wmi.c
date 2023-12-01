@@ -566,6 +566,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
 	},
 	{
 		.callback = set_force_caps,
+		.ident = "Acer Aspire Switch V 10 SW5-017",
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Acer"),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "SW5-017"),
+		},
+		.driver_data = (void *)ACER_CAP_KBD_DOCK,
+	},
+	{
+		.callback = set_force_caps,
 		.ident = "Acer One 10 (S1003)",
 		.matches = {
 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Acer"),
@@ -1913,7 +1922,6 @@ static void acer_rfkill_exit(void)
 		rfkill_unregister(threeg_rfkill);
 		rfkill_destroy(threeg_rfkill);
 	}
-	return;
 }
 
 static void acer_wmi_notify(u32 value, void *context)
@@ -2249,7 +2257,7 @@ error_mailled:
 	return err;
 }
 
-static int acer_platform_remove(struct platform_device *device)
+static void acer_platform_remove(struct platform_device *device)
 {
 	if (has_cap(ACER_CAP_MAILLED))
 		acer_led_exit();
@@ -2257,7 +2265,6 @@ static int acer_platform_remove(struct platform_device *device)
 		acer_backlight_exit();
 
 	acer_rfkill_exit();
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP
@@ -2325,7 +2332,7 @@ static struct platform_driver acer_platform_driver = {
 		.pm = &acer_pm,
 	},
 	.probe = acer_platform_probe,
-	.remove = acer_platform_remove,
+	.remove_new = acer_platform_remove,
 	.shutdown = acer_platform_shutdown,
 };
 
@@ -2509,7 +2516,6 @@ static void __exit acer_wmi_exit(void)
 	platform_driver_unregister(&acer_platform_driver);
 
 	pr_info("Acer Laptop WMI Extras unloaded\n");
-	return;
 }
 
 module_init(acer_wmi_init);

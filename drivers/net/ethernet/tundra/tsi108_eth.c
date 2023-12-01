@@ -1290,12 +1290,15 @@ static int tsi108_open(struct net_device *dev)
 
 	data->rxring = dma_alloc_coherent(&data->pdev->dev, rxring_size,
 					  &data->rxdma, GFP_KERNEL);
-	if (!data->rxring)
+	if (!data->rxring) {
+		free_irq(data->irq_num, dev);
 		return -ENOMEM;
+	}
 
 	data->txring = dma_alloc_coherent(&data->pdev->dev, txring_size,
 					  &data->txdma, GFP_KERNEL);
 	if (!data->txring) {
+		free_irq(data->irq_num, dev);
 		dma_free_coherent(&data->pdev->dev, rxring_size, data->rxring,
 				    data->rxdma);
 		return -ENOMEM;
@@ -1657,7 +1660,7 @@ static void tsi108_timed_checker(struct timer_list *t)
 	mod_timer(&data->timer, jiffies + CHECK_PHY_INTERVAL);
 }
 
-static int tsi108_ether_remove(struct platform_device *pdev)
+static void tsi108_ether_remove(struct platform_device *pdev)
 {
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct tsi108_prv_data *priv = netdev_priv(dev);
@@ -1667,15 +1670,13 @@ static int tsi108_ether_remove(struct platform_device *pdev)
 	iounmap(priv->regs);
 	iounmap(priv->phyregs);
 	free_netdev(dev);
-
-	return 0;
 }
 
 /* Structure for a device driver */
 
 static struct platform_driver tsi_eth_driver = {
 	.probe = tsi108_init_one,
-	.remove = tsi108_ether_remove,
+	.remove_new = tsi108_ether_remove,
 	.driver	= {
 		.name = "tsi-ethernet",
 	},

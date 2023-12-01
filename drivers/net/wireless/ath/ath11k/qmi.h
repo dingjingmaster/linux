@@ -27,7 +27,7 @@
 #define ATH11K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01	52
 #define ATH11K_QMI_CALDB_SIZE			0x480000
 #define ATH11K_QMI_BDF_EXT_STR_LENGTH		0x20
-#define ATH11K_QMI_FW_MEM_REQ_SEGMENT_CNT	3
+#define ATH11K_QMI_FW_MEM_REQ_SEGMENT_CNT	5
 
 #define QMI_WLFW_REQUEST_MEM_IND_V01		0x0035
 #define QMI_WLFW_FW_MEM_READY_IND_V01		0x0037
@@ -37,7 +37,7 @@
 
 #define QMI_WLANFW_MAX_DATA_SIZE_V01		6144
 #define ATH11K_FIRMWARE_MODE_OFF		4
-#define ATH11K_COLD_BOOT_FW_RESET_DELAY		(40 * HZ)
+#define ATH11K_COLD_BOOT_FW_RESET_DELAY		(60 * HZ)
 
 #define ATH11K_QMI_DEVICE_BAR_SIZE		0x200000
 
@@ -514,10 +514,9 @@ struct qmi_wlanfw_wlan_ini_resp_msg_v01 {
 int ath11k_qmi_firmware_start(struct ath11k_base *ab,
 			      u32 mode);
 void ath11k_qmi_firmware_stop(struct ath11k_base *ab);
-void ath11k_qmi_event_work(struct work_struct *work);
-void ath11k_qmi_msg_recv_work(struct work_struct *work);
 void ath11k_qmi_deinit_service(struct ath11k_base *ab);
 int ath11k_qmi_init_service(struct ath11k_base *ab);
 void ath11k_qmi_free_resource(struct ath11k_base *ab);
+int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab);
 
 #endif

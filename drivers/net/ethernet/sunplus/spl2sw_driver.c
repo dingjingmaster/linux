@@ -287,7 +287,6 @@ static u32 spl2sw_init_netdev(struct platform_device *pdev, u8 *mac_addr,
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to register net device \"%s\"!\n",
 			ndev->name);
-		free_netdev(ndev);
 		*r_ndev = NULL;
 		return ret;
 	}
@@ -512,7 +511,7 @@ out_clk_disable:
 	return ret;
 }
 
-static int spl2sw_remove(struct platform_device *pdev)
+static void spl2sw_remove(struct platform_device *pdev)
 {
 	struct spl2sw_common *comm;
 	int i;
@@ -539,8 +538,6 @@ static int spl2sw_remove(struct platform_device *pdev)
 	spl2sw_mdio_remove(comm);
 
 	clk_disable_unprepare(comm->clk);
-
-	return 0;
 }
 
 static const struct of_device_id spl2sw_of_match[] = {
@@ -552,7 +549,7 @@ MODULE_DEVICE_TABLE(of, spl2sw_of_match);
 
 static struct platform_driver spl2sw_driver = {
 	.probe = spl2sw_probe,
-	.remove = spl2sw_remove,
+	.remove_new = spl2sw_remove,
 	.driver = {
 		.name = "sp7021_emac",
 		.of_match_table = spl2sw_of_match,

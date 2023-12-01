@@ -129,6 +129,10 @@ void kmem_cache_free_bulk(struct kmem_cache *cachep, size_t size, void **list)
 	pthread_mutex_unlock(&cachep->lock);
 }
 
+void kmem_cache_shrink(struct kmem_cache *cachep)
+{
+}
+
 int kmem_cache_alloc_bulk(struct kmem_cache *cachep, gfp_t gfp, size_t size,
 			  void **p)
 {
@@ -161,9 +165,9 @@ int kmem_cache_alloc_bulk(struct kmem_cache *cachep, gfp_t gfp, size_t size,
 		for (i = 0; i < size; i++) {
 			if (cachep->align) {
 				posix_memalign(&p[i], cachep->align,
-					       cachep->size * size);
+					       cachep->size);
 			} else {
-				p[i] = malloc(cachep->size * size);
+				p[i] = malloc(cachep->size);
 			}
 			if (cachep->ctor)
 				cachep->ctor(p[i]);

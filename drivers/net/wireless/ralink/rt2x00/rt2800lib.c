@@ -856,6 +856,7 @@ static int rt2800_agc_to_rssi(struct rt2x00_dev *rt2x00dev, u32 rxwi_w2)
 	s8 rssi0 = rt2x00_get_field32(rxwi_w2, RXWI_W2_RSSI0);
 	s8 rssi1 = rt2x00_get_field32(rxwi_w2, RXWI_W2_RSSI1);
 	s8 rssi2 = rt2x00_get_field32(rxwi_w2, RXWI_W2_RSSI2);
+	s8 base_val = rt2x00_rt(rt2x00dev, RT6352) ? -2 : -12;
 	u16 eeprom;
 	u8 offset0;
 	u8 offset1;
@@ -880,9 +881,9 @@ static int rt2800_agc_to_rssi(struct rt2x00_dev *rt2x00dev, u32 rxwi_w2)
 	 * If the value in the descriptor is 0, it is considered invalid
 	 * and the default (extremely low) rssi value is assumed
 	 */
-	rssi0 = (rssi0) ? (-12 - offset0 - rt2x00dev->lna_gain - rssi0) : -128;
-	rssi1 = (rssi1) ? (-12 - offset1 - rt2x00dev->lna_gain - rssi1) : -128;
-	rssi2 = (rssi2) ? (-12 - offset2 - rt2x00dev->lna_gain - rssi2) : -128;
+	rssi0 = (rssi0) ? (base_val - offset0 - rt2x00dev->lna_gain - rssi0) : -128;
+	rssi1 = (rssi1) ? (base_val - offset1 - rt2x00dev->lna_gain - rssi1) : -128;
+	rssi2 = (rssi2) ? (base_val - offset2 - rt2x00dev->lna_gain - rssi2) : -128;
 
 	/*
 	 * mac80211 only accepts a single RSSI value. Calculating the
@@ -1236,13 +1237,14 @@ void rt2800_txdone_nostatus(struct rt2x00_dev *rt2x00dev)
 }
 EXPORT_SYMBOL_GPL(rt2800_txdone_nostatus);
 
-static int rt2800_check_hung(struct data_queue *queue)
+static bool rt2800_check_hung(struct data_queue *queue)
 {
 	unsigned int cur_idx = rt2800_drv_get_dma_done(queue);
 
-	if (queue->wd_idx != cur_idx)
+	if (queue->wd_idx != cur_idx) {
+		queue->wd_idx = cur_idx;
 		queue->wd_count = 0;
-	else
+	} else
 		queue->wd_count++;
 
 	return queue->wd_count > 16;
@@ -1279,7 +1281,7 @@ void rt2800_watchdog(struct rt2x00_dev *rt2x00dev)
 		case QID_MGMT:
 			if (rt2x00queue_empty(queue))
 				continue;
-			hung_tx = rt2800_check_hung(queue);
+			hung_tx = hung_tx || rt2800_check_hung(queue);
 			break;
 		case QID_RX:
 			/* For station mode we should reactive at least
@@ -1288,7 +1290,7 @@ void rt2800_watchdog(struct rt2x00_dev *rt2x00dev)
 			 */
 			if (rt2x00dev->intf_sta_count == 0)
 				continue;
-			hung_rx = rt2800_check_hung(queue);
+			hung_rx = hung_rx || rt2800_check_hung(queue);
 			break;
 		default:
 			break;
@@ -1301,8 +1303,12 @@ void rt2800_watchdog(struct rt2x00_dev *rt2x00dev)
 	if (hung_rx)
 		rt2x00_warn(rt2x00dev, "Watchdog RX hung detected\n");
 
-	if (hung_tx || hung_rx)
+	if (hung_tx || hung_rx) {
+		queue_for_each(rt2x00dev, queue)
+			queue->wd_count = 0;
+
 		ieee80211_restart_hw(rt2x00dev->hw);
+	}
 }
 EXPORT_SYMBOL_GPL(rt2800_watchdog);
 
@@ -3372,10 +3378,10 @@ static void rt2800_config_channel_rf53xx(struct rt2x00_dev *rt2x00dev,
 	if (rt2x00_has_cap_bt_coexist(rt2x00dev)) {
 		if (rt2x00_rt_rev_gte(rt2x00dev, RT5390, REV_RT5390F)) {
 			/* r55/r59 value array of channel 1~14 */
-			static const char r55_bt_rev[] = {0x83, 0x83,
+			static const u8 r55_bt_rev[] = {0x83, 0x83,
 				0x83, 0x73, 0x73, 0x63, 0x53, 0x53,
 				0x53, 0x43, 0x43, 0x43, 0x43, 0x43};
-			static const char r59_bt_rev[] = {0x0e, 0x0e,
+			static const u8 r59_bt_rev[] = {0x0e, 0x0e,
 				0x0e, 0x0e, 0x0e, 0x0b, 0x0a, 0x09,
 				0x07, 0x07, 0x07, 0x07, 0x07, 0x07};
 
@@ -3384,7 +3390,7 @@ static void rt2800_config_channel_rf53xx(struct rt2x00_dev *rt2x00dev,
 			rt2800_rfcsr_write(rt2x00dev, 59,
 					   r59_bt_rev[idx]);
 		} else {
-			static const char r59_bt[] = {0x8b, 0x8b, 0x8b,
+			static const u8 r59_bt[] = {0x8b, 0x8b, 0x8b,
 				0x8b, 0x8b, 0x8b, 0x8b, 0x8a, 0x89,
 				0x88, 0x88, 0x86, 0x85, 0x84};
 
@@ -3392,10 +3398,10 @@ static void rt2800_config_channel_rf53xx(struct rt2x00_dev *rt2x00dev,
 		}
 	} else {
 		if (rt2x00_rt_rev_gte(rt2x00dev, RT5390, REV_RT5390F)) {
-			static const char r55_nonbt_rev[] = {0x23, 0x23,
+			static const u8 r55_nonbt_rev[] = {0x23, 0x23,
 				0x23, 0x23, 0x13, 0x13, 0x03, 0x03,
 				0x03, 0x03, 0x03, 0x03, 0x03, 0x03};
-			static const char r59_nonbt_rev[] = {0x07, 0x07,
+			static const u8 r59_nonbt_rev[] = {0x07, 0x07,
 				0x07, 0x07, 0x07, 0x07, 0x07, 0x07,
 				0x07, 0x07, 0x06, 0x05, 0x04, 0x04};
 
@@ -3406,14 +3412,14 @@ static void rt2800_config_channel_rf53xx(struct rt2x00_dev *rt2x00dev,
 		} else if (rt2x00_rt(rt2x00dev, RT5390) ||
 			   rt2x00_rt(rt2x00dev, RT5392) ||
 			   rt2x00_rt(rt2x00dev, RT6352)) {
-			static const char r59_non_bt[] = {0x8f, 0x8f,
+			static const u8 r59_non_bt[] = {0x8f, 0x8f,
 				0x8f, 0x8f, 0x8f, 0x8f, 0x8f, 0x8d,
 				0x8a, 0x88, 0x88, 0x87, 0x87, 0x86};
 
 			rt2800_rfcsr_write(rt2x00dev, 59,
 					   r59_non_bt[idx]);
 		} else if (rt2x00_rt(rt2x00dev, RT5350)) {
-			static const char r59_non_bt[] = {0x0b, 0x0b,
+			static const u8 r59_non_bt[] = {0x0b, 0x0b,
 				0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0a,
 				0x0a, 0x09, 0x08, 0x07, 0x07, 0x06};
 
@@ -3855,38 +3861,53 @@ static void rt2800_config_channel_rf7620(struct rt2x00_dev *rt2x00dev,
 		rfcsr |= tx_agc_fc;
 		rt2800_rfcsr_write_bank(rt2x00dev, 7, 59, rfcsr);
 	}
-
-	if (conf_is_ht40(conf)) {
-		rt2800_bbp_glrt_write(rt2x00dev, 141, 0x10);
-		rt2800_bbp_glrt_write(rt2x00dev, 157, 0x2f);
-	} else {
-		rt2800_bbp_glrt_write(rt2x00dev, 141, 0x1a);
-		rt2800_bbp_glrt_write(rt2x00dev, 157, 0x40);
-	}
 }
 
-static void rt2800_config_alc(struct rt2x00_dev *rt2x00dev,
-			      struct ieee80211_channel *chan,
-			      int power_level) {
-	u16 eeprom, target_power, max_power;
+static void rt2800_config_alc_rt6352(struct rt2x00_dev *rt2x00dev,
+				     struct ieee80211_channel *chan,
+				     int power_level)
+{
+	int cur_channel = rt2x00dev->rf_channel;
+	u16 eeprom, chan_power, rate_power, target_power;
+	u16 tx_power[2];
+	s8 *power_group[2];
 	u32 mac_sys_ctrl;
-	u32 reg;
+	u32 cnt, reg;
 	u8 bbp;
 
-	/* hardware unit is 0.5dBm, limited to 23.5dBm */
-	power_level *= 2;
-	if (power_level > 0x2f)
-		power_level = 0x2f;
+	if (WARN_ON(cur_channel < 1 || cur_channel > 14))
+		return;
 
-	max_power = chan->max_power * 2;
-	if (max_power > 0x2f)
-		max_power = 0x2f;
+	/* get per chain power, 2 chains in total, unit is 0.5dBm */
+	power_level = (power_level - 3) * 2;
+
+	/* We can't get the accurate TX power. Based on some tests, the real
+	 * TX power is approximately equal to channel_power + (max)rate_power.
+	 * Usually max rate_power is the gain of the OFDM 6M rate. The antenna
+	 * gain and externel PA gain are not included as we are unable to
+	 * obtain these values.
+	 */
+	rate_power = rt2800_eeprom_read_from_array(rt2x00dev,
+						   EEPROM_TXPOWER_BYRATE, 1);
+	rate_power &= 0x3f;
+	power_level -= rate_power;
+	if (power_level < 1)
+		power_level = 1;
+
+	power_group[0] = rt2800_eeprom_addr(rt2x00dev, EEPROM_TXPOWER_BG1);
+	power_group[1] = rt2800_eeprom_addr(rt2x00dev, EEPROM_TXPOWER_BG2);
+	for (cnt = 0; cnt < 2; cnt++) {
+		chan_power = power_group[cnt][cur_channel - 1];
+		if (chan_power >= 0x20 || chan_power == 0)
+			chan_power = 0x10;
+		tx_power[cnt] = power_level < chan_power ? power_level : chan_power;
+	}
 
 	reg = rt2800_register_read(rt2x00dev, TX_ALC_CFG_0);
-	rt2x00_set_field32(&reg, TX_ALC_CFG_0_CH_INIT_0, power_level);
-	rt2x00_set_field32(&reg, TX_ALC_CFG_0_CH_INIT_1, power_level);
-	rt2x00_set_field32(&reg, TX_ALC_CFG_0_LIMIT_0, max_power);
-	rt2x00_set_field32(&reg, TX_ALC_CFG_0_LIMIT_1, max_power);
+	rt2x00_set_field32(&reg, TX_ALC_CFG_0_CH_INIT_0, tx_power[0]);
+	rt2x00_set_field32(&reg, TX_ALC_CFG_0_CH_INIT_1, tx_power[1]);
+	rt2x00_set_field32(&reg, TX_ALC_CFG_0_LIMIT_0, 0x2f);
+	rt2x00_set_field32(&reg, TX_ALC_CFG_0_LIMIT_1, 0x2f);
 
 	eeprom = rt2800_eeprom_read(rt2x00dev, EEPROM_NIC_CONF1);
 	if (rt2x00_get_field16(eeprom, EEPROM_NIC_CONF1_INTERNAL_TX_ALC)) {
@@ -4035,23 +4056,23 @@ static void rt2800_iq_calibrate(struct rt2x00_dev *rt2x00dev, int channel)
 	rt2800_bbp_write(rt2x00dev, 159, cal != 0xff ? cal : 0);
 }
 
-static char rt2800_txpower_to_dev(struct rt2x00_dev *rt2x00dev,
+static s8 rt2800_txpower_to_dev(struct rt2x00_dev *rt2x00dev,
 				  unsigned int channel,
-				  char txpower)
+				  s8 txpower)
 {
 	if (rt2x00_rt(rt2x00dev, RT3593) ||
 	    rt2x00_rt(rt2x00dev, RT3883))
 		txpower = rt2x00_get_field8(txpower, EEPROM_TXPOWER_ALC);
 
 	if (channel <= 14)
-		return clamp_t(char, txpower, MIN_G_TXPOWER, MAX_G_TXPOWER);
+		return clamp_t(s8, txpower, MIN_G_TXPOWER, MAX_G_TXPOWER);
 
 	if (rt2x00_rt(rt2x00dev, RT3593) ||
 	    rt2x00_rt(rt2x00dev, RT3883))
-		return clamp_t(char, txpower, MIN_A_TXPOWER_3593,
+		return clamp_t(s8, txpower, MIN_A_TXPOWER_3593,
 			       MAX_A_TXPOWER_3593);
 	else
-		return clamp_t(char, txpower, MIN_A_TXPOWER, MAX_A_TXPOWER);
+		return clamp_t(s8, txpower, MIN_A_TXPOWER, MAX_A_TXPOWER);
 }
 
 static void rt3883_bbp_adjust(struct rt2x00_dev *rt2x00dev,
@@ -4408,66 +4429,45 @@ static void rt2800_config_channel(struct rt2x00_dev *rt2x00dev,
 		usleep_range(1000, 1500);
 	}
 
-	if (rt2x00_rt(rt2x00dev, RT5592) || rt2x00_rt(rt2x00dev, RT6352)) {
-		reg = 0x10;
-		if (!conf_is_ht40(conf)) {
-			if (rt2x00_rt(rt2x00dev, RT6352) &&
-			    rt2x00_has_cap_external_lna_bg(rt2x00dev)) {
-				reg |= 0x5;
-			} else {
-				reg |= 0xa;
-			}
-		}
-		rt2800_bbp_write(rt2x00dev, 195, 141);
-		rt2800_bbp_write(rt2x00dev, 196, reg);
+	if (rt2x00_rt(rt2x00dev, RT5592)) {
+		bbp = conf_is_ht40(conf) ? 0x10 : 0x1a;
+		rt2800_bbp_glrt_write(rt2x00dev, 141, bbp);
 
-		/* AGC init.
-		 * Despite the vendor driver using different values here for
-		 * RT6352 chip, we use 0x1c for now. This may have to be changed
-		 * once TSSI got implemented.
-		 */
-		reg = (rf->channel <= 14 ? 0x1c : 0x24) + 2*rt2x00dev->lna_gain;
-		rt2800_bbp_write_with_rx_chain(rt2x00dev, 66, reg);
+		bbp = (rf->channel <= 14 ? 0x1c : 0x24) + 2 * rt2x00dev->lna_gain;
+		rt2800_bbp_write_with_rx_chain(rt2x00dev, 66, bbp);
 
-		if (rt2x00_rt(rt2x00dev, RT5592))
-			rt2800_iq_calibrate(rt2x00dev, rf->channel);
+		rt2800_iq_calibrate(rt2x00dev, rf->channel);
 	}
 
 	if (rt2x00_rt(rt2x00dev, RT6352)) {
-		if (test_bit(CAPABILITY_EXTERNAL_PA_TX0,
-			     &rt2x00dev->cap_flags)) {
-			reg = rt2800_register_read(rt2x00dev, RF_CONTROL3);
-			reg |= 0x00000101;
-			rt2800_register_write(rt2x00dev, RF_CONTROL3, reg);
+		/* BBP for GLRT BW */
+		bbp = conf_is_ht40(conf) ?
+		      0x10 : rt2x00_has_cap_external_lna_bg(rt2x00dev) ?
+		      0x15 : 0x1a;
+		rt2800_bbp_glrt_write(rt2x00dev, 141, bbp);
 
-			reg = rt2800_register_read(rt2x00dev, RF_BYPASS3);
-			reg |= 0x00000101;
-			rt2800_register_write(rt2x00dev, RF_BYPASS3, reg);
+		bbp = conf_is_ht40(conf) ? 0x2f : 0x40;
+		rt2800_bbp_glrt_write(rt2x00dev, 157, bbp);
 
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 43, 0x73);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 44, 0x73);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 45, 0x73);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 46, 0x27);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 47, 0xC8);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 48, 0xA4);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 49, 0x05);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 54, 0x27);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 55, 0xC8);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 56, 0xA4);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 57, 0x05);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 58, 0x27);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 59, 0xC8);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 60, 0xA4);
-			rt2800_rfcsr_write_chanreg(rt2x00dev, 61, 0x05);
-			rt2800_rfcsr_write_dccal(rt2x00dev, 05, 0x00);
-
-			rt2800_register_write(rt2x00dev, TX0_RF_GAIN_CORRECT,
-					      0x36303636);
-			rt2800_register_write(rt2x00dev, TX0_RF_GAIN_ATTEN,
-					      0x6C6C6B6C);
-			rt2800_register_write(rt2x00dev, TX1_RF_GAIN_ATTEN,
-					      0x6C6C6B6C);
+		if (rt2x00dev->default_ant.rx_chain_num == 1) {
+			rt2800_bbp_write(rt2x00dev, 91, 0x07);
+			rt2800_bbp_write(rt2x00dev, 95, 0x1a);
+			rt2800_bbp_glrt_write(rt2x00dev, 128, 0xa0);
+			rt2800_bbp_glrt_write(rt2x00dev, 170, 0x12);
+			rt2800_bbp_glrt_write(rt2x00dev, 171, 0x10);
+		} else {
+			rt2800_bbp_write(rt2x00dev, 91, 0x06);
+			rt2800_bbp_write(rt2x00dev, 95, 0x9a);
+			rt2800_bbp_glrt_write(rt2x00dev, 128, 0xe0);
+			rt2800_bbp_glrt_write(rt2x00dev, 170, 0x30);
+			rt2800_bbp_glrt_write(rt2x00dev, 171, 0x30);
 		}
+
+		/* AGC init */
+		bbp = rf->channel <= 14 ? 0x04 + 2 * rt2x00dev->lna_gain : 0;
+		rt2800_bbp_write_with_rx_chain(rt2x00dev, 66, bbp);
+
+		usleep_range(1000, 1500);
 	}
 
 	bbp = rt2800_bbp_read(rt2x00dev, 4);
@@ -5268,7 +5268,7 @@ static void rt2800_config_txpower_rt6352(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&pwreg, TX_PWR_CFG_9B_STBC_MCS7, t);
 	rt2800_register_write(rt2x00dev, TX_PWR_CFG_9, pwreg);
 
-	rt2800_config_alc(rt2x00dev, chan, power_level);
+	rt2800_config_alc_rt6352(rt2x00dev, chan, power_level);
 
 	/* TODO: temperature compensation code! */
 }
@@ -5577,43 +5577,6 @@ void rt2800_vco_calibration(struct rt2x00_dev *rt2x00dev)
 		}
 	}
 	rt2800_register_write(rt2x00dev, TX_PIN_CFG, tx_pin);
-
-	if (rt2x00_rt(rt2x00dev, RT6352)) {
-		if (rt2x00dev->default_ant.rx_chain_num == 1) {
-			rt2800_bbp_write(rt2x00dev, 91, 0x07);
-			rt2800_bbp_write(rt2x00dev, 95, 0x1A);
-			rt2800_bbp_write(rt2x00dev, 195, 128);
-			rt2800_bbp_write(rt2x00dev, 196, 0xA0);
-			rt2800_bbp_write(rt2x00dev, 195, 170);
-			rt2800_bbp_write(rt2x00dev, 196, 0x12);
-			rt2800_bbp_write(rt2x00dev, 195, 171);
-			rt2800_bbp_write(rt2x00dev, 196, 0x10);
-		} else {
-			rt2800_bbp_write(rt2x00dev, 91, 0x06);
-			rt2800_bbp_write(rt2x00dev, 95, 0x9A);
-			rt2800_bbp_write(rt2x00dev, 195, 128);
-			rt2800_bbp_write(rt2x00dev, 196, 0xE0);
-			rt2800_bbp_write(rt2x00dev, 195, 170);
-			rt2800_bbp_write(rt2x00dev, 196, 0x30);
-			rt2800_bbp_write(rt2x00dev, 195, 171);
-			rt2800_bbp_write(rt2x00dev, 196, 0x30);
-		}
-
-		if (rt2x00_has_cap_external_lna_bg(rt2x00dev)) {
-			rt2800_bbp_write(rt2x00dev, 75, 0x68);
-			rt2800_bbp_write(rt2x00dev, 76, 0x4C);
-			rt2800_bbp_write(rt2x00dev, 79, 0x1C);
-			rt2800_bbp_write(rt2x00dev, 80, 0x0C);
-			rt2800_bbp_write(rt2x00dev, 82, 0xB6);
-		}
-
-		/* On 11A, We should delay and wait RF/BBP to be stable
-		 * and the appropriate time should be 1000 micro seconds
-		 * 2005/06/05 - On 11G, we also need this delay time.
-		 * Otherwise it's difficult to pass the WHQL.
-		 */
-		usleep_range(1000, 1500);
-	}
 }
 EXPORT_SYMBOL_GPL(rt2800_vco_calibration);
 
@@ -5822,6 +5785,7 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 	struct rt2800_drv_data *drv_data = rt2x00dev->drv_data;
 	u32 reg;
 	u16 eeprom;
+	u8 bbp;
 	unsigned int i;
 	int ret;
 
@@ -5830,6 +5794,19 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 	ret = rt2800_drv_init_registers(rt2x00dev);
 	if (ret)
 		return ret;
+
+	if (rt2x00_rt(rt2x00dev, RT6352)) {
+		rt2800_register_write(rt2x00dev, MAC_SYS_CTRL, 0x01);
+
+		bbp = rt2800_bbp_read(rt2x00dev, 21);
+		bbp |= 0x01;
+		rt2800_bbp_write(rt2x00dev, 21, bbp);
+		bbp = rt2800_bbp_read(rt2x00dev, 21);
+		bbp &= (~0x01);
+		rt2800_bbp_write(rt2x00dev, 21, bbp);
+
+		rt2800_register_write(rt2x00dev, MAC_SYS_CTRL, 0x00);
+	}
 
 	rt2800_register_write(rt2x00dev, LEGACY_BASIC_RATE, 0x0000013f);
 	rt2800_register_write(rt2x00dev, HT_BASIC_RATE, 0x00008003);
@@ -5984,6 +5961,14 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 		reg = rt2800_register_read(rt2x00dev, TX_ALC_CFG_1);
 		rt2x00_set_field32(&reg, TX_ALC_CFG_1_ROS_BUSY_EN, 0);
 		rt2800_register_write(rt2x00dev, TX_ALC_CFG_1, reg);
+
+		rt2800_register_write(rt2x00dev, AMPDU_MAX_LEN_20M1S, 0x77754433);
+		rt2800_register_write(rt2x00dev, AMPDU_MAX_LEN_20M2S, 0x77765543);
+		rt2800_register_write(rt2x00dev, AMPDU_MAX_LEN_40M1S, 0x77765544);
+		rt2800_register_write(rt2x00dev, AMPDU_MAX_LEN_40M2S, 0x77765544);
+
+		rt2800_register_write(rt2x00dev, HT_FBK_TO_LEGACY, 0x1010);
+
 	} else {
 		rt2800_register_write(rt2x00dev, TX_SW_CFG0, 0x00000000);
 		rt2800_register_write(rt2x00dev, TX_SW_CFG1, 0x00080606);
@@ -7202,6 +7187,8 @@ static void rt2800_init_bbp_6352(struct rt2x00_dev *rt2x00dev)
 	rt2800_bbp_dcoc_write(rt2x00dev, 159, 0x64);
 
 	rt2800_bbp4_mac_if_ctrl(rt2x00dev);
+
+	rt2800_bbp_write(rt2x00dev, 84, 0x19);
 }
 
 static void rt2800_init_bbp(struct rt2x00_dev *rt2x00dev)
@@ -8530,7 +8517,7 @@ static void rt2800_r_calibration(struct rt2x00_dev *rt2x00dev)
 	u8 bytevalue = 0;
 	int rcalcode;
 	u8 r_cal_code = 0;
-	char d1 = 0, d2 = 0;
+	s8 d1 = 0, d2 = 0;
 	u8 rfvalue;
 	u32 MAC_RF_BYPASS0, MAC_RF_CONTROL0, MAC_PWR_PIN_CFG;
 	u32 maccfg;
@@ -8561,7 +8548,7 @@ static void rt2800_r_calibration(struct rt2x00_dev *rt2x00dev)
 		rt2x00_warn(rt2x00dev, "Wait MAC Tx Status to MAX !!!\n");
 
 	maccfg = rt2800_register_read(rt2x00dev, MAC_SYS_CTRL);
-	maccfg &= (~0x04);
+	maccfg &= (~0x08);
 	rt2800_register_write(rt2x00dev, MAC_SYS_CTRL, maccfg);
 
 	if (unlikely(rt2800_wait_bbp_rf_ready(rt2x00dev, MAC_STATUS_CFG_BBP_RF_BUSY_RX)))
@@ -8591,7 +8578,7 @@ static void rt2800_r_calibration(struct rt2x00_dev *rt2x00dev)
 	if (bytevalue > 128)
 		d1 = bytevalue - 256;
 	else
-		d1 = (char)bytevalue;
+		d1 = (s8)bytevalue;
 	rt2800_bbp_write(rt2x00dev, 22, 0x0);
 	rt2800_rfcsr_write_bank(rt2x00dev, 0, 35, 0x01);
 
@@ -8601,7 +8588,7 @@ static void rt2800_r_calibration(struct rt2x00_dev *rt2x00dev)
 	if (bytevalue > 128)
 		d2 = bytevalue - 256;
 	else
-		d2 = (char)bytevalue;
+		d2 = (s8)bytevalue;
 	rt2800_bbp_write(rt2x00dev, 22, 0x0);
 
 	rcalcode = rt2800_calcrcalibrationcode(rt2x00dev, d1, d2);
@@ -8703,7 +8690,7 @@ static void rt2800_rxdcoc_calibration(struct rt2x00_dev *rt2x00dev)
 static u32 rt2800_do_sqrt_accumulation(u32 si)
 {
 	u32 root, root_pre, bit;
-	char i;
+	s8 i;
 
 	bit = 1 << 15;
 	root = 0;
@@ -8924,8 +8911,6 @@ static void rt2800_rxiq_calibration(struct rt2x00_dev *rt2x00dev)
 
 				if (i < 2 && (bbptemp & 0x800000))
 					result = (bbptemp & 0xffffff) - 0x1000000;
-				else if (i == 4)
-					result = bbptemp;
 				else
 					result = bbptemp;
 
@@ -9330,11 +9315,11 @@ static void rt2800_loft_search(struct rt2x00_dev *rt2x00dev, u8 ch_idx,
 			       u8 alc_idx, u8 dc_result[][RF_ALC_NUM][2])
 {
 	u32 p0 = 0, p1 = 0, pf = 0;
-	char idx0 = 0, idx1 = 0;
+	s8 idx0 = 0, idx1 = 0;
 	u8 idxf[] = {0x00, 0x00};
 	u8 ibit = 0x20;
 	u8 iorq;
-	char bidx;
+	s8 bidx;
 
 	rt2800_bbp_write(rt2x00dev, 158, 0xb0);
 	rt2800_bbp_write(rt2x00dev, 159, 0x80);
@@ -9384,17 +9369,17 @@ static void rt2800_loft_search(struct rt2x00_dev *rt2x00dev, u8 ch_idx,
 static void rt2800_iq_search(struct rt2x00_dev *rt2x00dev, u8 ch_idx, u8 *ges, u8 *pes)
 {
 	u32 p0 = 0, p1 = 0, pf = 0;
-	char perr = 0, gerr = 0, iq_err = 0;
-	char pef = 0, gef = 0;
-	char psta, pend;
-	char gsta, gend;
+	s8 perr = 0, gerr = 0, iq_err = 0;
+	s8 pef = 0, gef = 0;
+	s8 psta, pend;
+	s8 gsta, gend;
 
 	u8 ibit = 0x20;
 	u8 first_search = 0x00, touch_neg_max = 0x00;
-	char idx0 = 0, idx1 = 0;
+	s8 idx0 = 0, idx1 = 0;
 	u8 gop;
 	u8 bbp = 0;
-	char bidx;
+	s8 bidx;
 
 	for (bidx = 5; bidx >= 1; bidx--) {
 		for (gop = 0; gop < 2; gop++) {
@@ -9679,9 +9664,6 @@ static void rt2800_loft_iq_calibration(struct rt2x00_dev *rt2x00dev)
 
 				rt2x00_dbg(rt2x00dev, "Used VGA %d %x\n", vga_gain[ch_idx],
 					   rfvga_gain_table[vga_gain[ch_idx]]);
-
-				if (vga_gain[ch_idx] < 0)
-					vga_gain[ch_idx] = 0;
 			}
 
 			rfvalue = rfvga_gain_table[vga_gain[ch_idx]];
@@ -10043,11 +10025,11 @@ static int rt2800_rf_lp_config(struct rt2x00_dev *rt2x00dev, bool btxcal)
 	return 0;
 }
 
-static char rt2800_lp_tx_filter_bw_cal(struct rt2x00_dev *rt2x00dev)
+static s8 rt2800_lp_tx_filter_bw_cal(struct rt2x00_dev *rt2x00dev)
 {
 	unsigned int cnt;
 	u8 bbp_val;
-	char cal_val;
+	s8 cal_val;
 
 	rt2800_bbp_dcoc_write(rt2x00dev, 0, 0x82);
 
@@ -10079,7 +10061,7 @@ static void rt2800_bw_filter_calibration(struct rt2x00_dev *rt2x00dev,
 	u8 rx_filter_target_20m = 0x27, rx_filter_target_40m = 0x31;
 	int loop = 0, is_ht40, cnt;
 	u8 bbp_val, rf_val;
-	char cal_r32_init, cal_r32_val, cal_diff;
+	s8 cal_r32_init, cal_r32_val, cal_diff;
 	u8 saverfb5r00, saverfb5r01, saverfb5r03, saverfb5r04, saverfb5r05;
 	u8 saverfb5r06, saverfb5r07;
 	u8 saverfb5r08, saverfb5r17, saverfb5r18, saverfb5r19, saverfb5r20;
@@ -10316,6 +10298,128 @@ do_cal:
 
 	rt2800_register_write(rt2x00dev, RF_CONTROL0, MAC_RF_CONTROL0);
 	rt2800_register_write(rt2x00dev, RF_BYPASS0, MAC_RF_BYPASS0);
+}
+
+static void rt2800_restore_rf_bbp_rt6352(struct rt2x00_dev *rt2x00dev)
+{
+	if (rt2x00_has_cap_external_pa(rt2x00dev)) {
+		rt2800_register_write(rt2x00dev, RF_CONTROL3, 0x0);
+		rt2800_register_write(rt2x00dev, RF_BYPASS3, 0x0);
+	}
+
+	if (rt2x00_has_cap_external_lna_bg(rt2x00dev)) {
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 14, 0x16);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 17, 0x23);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 18, 0x02);
+	}
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev)) {
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 43, 0xd3);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 44, 0xb3);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 45, 0xd5);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 46, 0x27);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 47, 0x6c);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 48, 0xfc);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 49, 0x1f);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 54, 0x27);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 55, 0x66);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 56, 0xff);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 57, 0x1c);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 58, 0x20);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 59, 0x6b);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 60, 0xf7);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 61, 0x09);
+	}
+
+	if (rt2x00_has_cap_external_lna_bg(rt2x00dev)) {
+		rt2800_bbp_write(rt2x00dev, 75, 0x60);
+		rt2800_bbp_write(rt2x00dev, 76, 0x44);
+		rt2800_bbp_write(rt2x00dev, 79, 0x1c);
+		rt2800_bbp_write(rt2x00dev, 80, 0x0c);
+		rt2800_bbp_write(rt2x00dev, 82, 0xB6);
+	}
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev)) {
+		rt2800_register_write(rt2x00dev, TX0_RF_GAIN_CORRECT, 0x3630363a);
+		rt2800_register_write(rt2x00dev, TX0_RF_GAIN_ATTEN, 0x6c6c666c);
+		rt2800_register_write(rt2x00dev, TX1_RF_GAIN_ATTEN, 0x6c6c666c);
+	}
+}
+
+static void rt2800_calibration_rt6352(struct rt2x00_dev *rt2x00dev)
+{
+	u32 reg;
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev) ||
+	    rt2x00_has_cap_external_lna_bg(rt2x00dev))
+		rt2800_restore_rf_bbp_rt6352(rt2x00dev);
+
+	rt2800_r_calibration(rt2x00dev);
+	rt2800_rf_self_txdc_cal(rt2x00dev);
+	rt2800_rxdcoc_calibration(rt2x00dev);
+	rt2800_bw_filter_calibration(rt2x00dev, true);
+	rt2800_bw_filter_calibration(rt2x00dev, false);
+	rt2800_loft_iq_calibration(rt2x00dev);
+
+	/* missing DPD calibration for internal PA devices */
+
+	rt2800_rxdcoc_calibration(rt2x00dev);
+	rt2800_rxiq_calibration(rt2x00dev);
+
+	if (!rt2x00_has_cap_external_pa(rt2x00dev) &&
+	    !rt2x00_has_cap_external_lna_bg(rt2x00dev))
+		return;
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev)) {
+		reg = rt2800_register_read(rt2x00dev, RF_CONTROL3);
+		reg |= 0x00000101;
+		rt2800_register_write(rt2x00dev, RF_CONTROL3, reg);
+
+		reg = rt2800_register_read(rt2x00dev, RF_BYPASS3);
+		reg |= 0x00000101;
+		rt2800_register_write(rt2x00dev, RF_BYPASS3, reg);
+	}
+
+	if (rt2x00_has_cap_external_lna_bg(rt2x00dev)) {
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 14, 0x66);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 17, 0x20);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 18, 0x42);
+	}
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev)) {
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 43, 0x73);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 44, 0x73);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 45, 0x73);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 46, 0x27);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 47, 0xc8);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 48, 0xa4);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 49, 0x05);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 54, 0x27);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 55, 0xc8);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 56, 0xa4);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 57, 0x05);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 58, 0x27);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 59, 0xc8);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 60, 0xa4);
+		rt2800_rfcsr_write_chanreg(rt2x00dev, 61, 0x05);
+	}
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev))
+		rt2800_rfcsr_write_dccal(rt2x00dev, 05, 0x00);
+
+	if (rt2x00_has_cap_external_lna_bg(rt2x00dev)) {
+		rt2800_bbp_write(rt2x00dev, 75, 0x68);
+		rt2800_bbp_write(rt2x00dev, 76, 0x4c);
+		rt2800_bbp_write(rt2x00dev, 79, 0x1c);
+		rt2800_bbp_write(rt2x00dev, 80, 0x0c);
+		rt2800_bbp_write(rt2x00dev, 82, 0xb6);
+	}
+
+	if (rt2x00_has_cap_external_pa(rt2x00dev)) {
+		rt2800_register_write(rt2x00dev, TX0_RF_GAIN_CORRECT, 0x36303636);
+		rt2800_register_write(rt2x00dev, TX0_RF_GAIN_ATTEN, 0x6c6c6b6c);
+		rt2800_register_write(rt2x00dev, TX1_RF_GAIN_ATTEN, 0x6c6c6b6c);
+	}
 }
 
 static void rt2800_init_rfcsr_6352(struct rt2x00_dev *rt2x00dev)
@@ -10582,13 +10686,8 @@ static void rt2800_init_rfcsr_6352(struct rt2x00_dev *rt2x00dev)
 	rt2800_rfcsr_write_dccal(rt2x00dev, 5, 0x00);
 	rt2800_rfcsr_write_dccal(rt2x00dev, 17, 0x7C);
 
-	rt2800_r_calibration(rt2x00dev);
-	rt2800_rf_self_txdc_cal(rt2x00dev);
-	rt2800_rxdcoc_calibration(rt2x00dev);
-	rt2800_bw_filter_calibration(rt2x00dev, true);
-	rt2800_bw_filter_calibration(rt2x00dev, false);
-	rt2800_loft_iq_calibration(rt2x00dev);
-	rt2800_rxiq_calibration(rt2x00dev);
+	/* Do calibration and init PA/LNA */
+	rt2800_calibration_rt6352(rt2x00dev);
 }
 
 static void rt2800_init_rfcsr(struct rt2x00_dev *rt2x00dev)
@@ -11550,9 +11649,9 @@ static int rt2800_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 {
 	struct hw_mode_spec *spec = &rt2x00dev->spec;
 	struct channel_info *info;
-	char *default_power1;
-	char *default_power2;
-	char *default_power3;
+	s8 *default_power1;
+	s8 *default_power2;
+	s8 *default_power3;
 	unsigned int i, tx_chains, rx_chains;
 	u32 reg;
 
