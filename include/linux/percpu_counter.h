@@ -43,6 +43,12 @@ int __percpu_counter_init_many(struct percpu_counter *fbc, s64 amount,
 	})
 
 
+/**
+ * per-count 计数器是Linux中一个统计工具，它可以用来跟踪每个CPU上的某些事件或操作的次数。这个计数器可以帮助开发者和系统管理员了解系统中的性能瓶颈、资源占用等情况，从而进行优化和调整。
+ * 
+ * 在Linux中，per-cpu计数器是通过 `/proc/cpuinfo` 文件来实现的，每个CPU都有一个对应的计数器，可以统计该CPU上发生的事件或操作的次数。这些计数器可用于跟踪各种性能指标，如：CPU使用率、内存使用率、I/O操作次数等。
+ *
+ */
 #define percpu_counter_init(fbc, value, gfp)				\
 	percpu_counter_init_many(fbc, value, gfp, 1)
 

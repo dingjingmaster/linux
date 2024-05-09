@@ -3348,13 +3348,17 @@ void __init vfs_caches_init_early(void)
 
 void __init vfs_caches_init(void)
 {
+    // kmem_cache_create_usercopy 用于创建一个新的内存缓存区，供用户空间程序访问和使用。
 	names_cachep = kmem_cache_create_usercopy("names_cache", PATH_MAX, 0,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC, 0, PATH_MAX, NULL);
 
 	dcache_init();
 	inode_init();
+    // 文件系统初始化为可用状态。
 	files_init();
 	files_maxfiles_init();
+    // 初始化 mount 表结构
+    // 另外：这里执行了根文件系统初始化...
 	mnt_init();
 	bdev_cache_init();
 	chrdev_init();

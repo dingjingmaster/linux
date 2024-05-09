@@ -71,6 +71,12 @@ extern int finish_automount(struct vfsmount *, const struct path *);
 
 extern int sb_prepare_remount_readonly(struct super_block *);
 
+/**
+ * @brief: 初始化 mount 表结构
+ *  
+ *  mnt_init() 用于各种场景，如文件系统的挂载、卸载、更改等操作。在这些场景中，这个函数都将 mount 表结构初始化为一个正确的状态，以便后续的操作能够顺利进行。
+ * @note: fs/namespace.c
+ */
 extern void __init mnt_init(void);
 
 int mnt_get_write_access_file(struct file *file);

@@ -870,6 +870,10 @@ static void __init print_unknown_bootoptions(void)
 	memblock_free(unknown_options, len);
 }
 
+/**
+ * @brief Linux内核启动时候执行的第一个函数，负责内核初始化。
+ * 设置栈、分配内存、初始化CPU、调用initcall
+ */
 asmlinkage __visible __init __no_sanitize_address __noreturn __no_stack_protector
 void start_kernel(void)
 {
@@ -890,6 +894,9 @@ void start_kernel(void)
 	 * Interrupts are still disabled. Do necessary setups, then
 	 * enable them.
 	 */
+    /**
+     * @brief 激活第一个CPU
+     */
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
@@ -926,7 +933,13 @@ void start_kernel(void)
 	 * initalization of page allocator
 	 */
 	setup_log_buf(0);
+    // dcache 初始化 数据结构分配
+    // inode 初始化 数据结构分配
 	vfs_caches_init_early();
+
+    /**
+     * @brief 内核内建异常表 排序
+     */
 	sort_main_extable();
 	trap_init();
 	mm_core_init();
@@ -1053,6 +1066,12 @@ void start_kernel(void)
 	security_init();
 	dbg_late_init();
 	net_ns_init();
+
+    /**
+     * @brief 初始化文件系统缓存。打开文件系统缓存并将其设置为可读写状态。提高文件系统的性能和效率。
+     *
+     * 文件系统模块初始化 -- 大概率在这个函数里
+     */
 	vfs_caches_init();
 	pagecache_init();
 	signals_init();

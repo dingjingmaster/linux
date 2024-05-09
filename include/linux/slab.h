@@ -189,6 +189,11 @@ bool slab_is_available(void);
 struct kmem_cache *kmem_cache_create(const char *name, unsigned int size,
 			unsigned int align, slab_flags_t flags,
 			void (*ctor)(void *));
+
+/**
+ * @brief
+ *  kmem_cache_create_usercopy 用于创建一个新的内存缓存区，供用户空间程序访问和使用。
+ */
 struct kmem_cache *kmem_cache_create_usercopy(const char *name,
 			unsigned int size, unsigned int align,
 			slab_flags_t flags,
